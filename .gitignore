@@ -7,3 +7,14 @@ venv/
 .idea/
 *.log
 .DS_Store
+
+# Dataset files
+data/
+
+# Trained ML model artifacts
+models/
+
+# Python test and cache files
+.pytest_cache/
+.coverage
+htmlcov/
