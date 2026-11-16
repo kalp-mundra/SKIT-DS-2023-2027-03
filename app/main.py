@@ -11,6 +11,8 @@ from app.preprocessing import load_dataset
 import pandas as pd
 from datetime import timedelta
 
+from app.fault_detection import solar_fault_detector
+
 app = FastAPI(
     title="Heliq Solar Energy Prediction API",
     description=(
@@ -181,4 +183,61 @@ def dashboard_generation(days: int = 30):
         raise HTTPException(
             status_code=500,
             detail=f"Generation data fetch failed: {error}"
+        )
+
+
+
+@app.get("/faults")
+def get_faults(severity: str = "all"):
+    try:
+        valid_severities = ["all", "critical", "warning", "info"]
+
+        if severity not in valid_severities:
+            raise HTTPException(
+                status_code=400,
+                detail="Severity must be all, critical, warning, or info."
+            )
+
+        df = load_dataset()
+
+        alerts = solar_fault_detector.detect(df)
+
+        if severity != "all":
+            alerts = [
+                alert for alert in alerts
+                if alert["severity"] == severity
+            ]
+
+        return {
+            "total_alerts": len(alerts),
+            "critical_count": sum(
+                alert["severity"] == "critical"
+                for alert in alerts
+            ),
+            "warning_count": sum(
+                alert["severity"] == "warning"
+                for alert in alerts
+            ),
+            "severity_filter": severity,
+            "data_type": "historical",
+            "detection_methods": [
+                "isolation_forest",
+                "rule_based"
+            ],
+            "alerts": alerts
+        }
+
+    except HTTPException:
+        raise
+
+    except FileNotFoundError as error:
+        raise HTTPException(
+            status_code=503,
+            detail=str(error)
+        )
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Fault detection failed: {error}"
         )
