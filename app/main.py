@@ -9,6 +9,7 @@ from app.model_service import solar_model
 from app.monitoring import get_system_status
 from app.preprocessing import load_dataset
 import pandas as pd
+from datetime import timedelta
 
 app = FastAPI(
     title="Heliq Solar Energy Prediction API",
@@ -113,4 +114,71 @@ def dashboard_summary():
         raise HTTPException(
             status_code=500,
             detail=f"Dashboard summary failed: {error}"
+        )
+
+
+@app.get("/dashboard/generation")
+def dashboard_generation(days: int = 30):
+    try:
+        if days < 1 or days > 365:
+            raise HTTPException(
+                status_code=400,
+                detail="Days must be between 1 and 365."
+            )
+
+        df = load_dataset()
+
+        df["Time"] = pd.to_datetime(df["Time"])
+
+        # Find latest available date in dataset
+        latest_date = df["Time"].max().normalize()
+
+        # Calculate date range
+        start_date = latest_date - timedelta(days=days - 1)
+
+        # Filter records
+        filtered_df = df[
+            (df["Time"] >= start_date)
+            & (df["Time"] < latest_date + timedelta(days=1))
+        ].copy()
+
+        # Aggregate daily energy generation
+        daily_data = (
+            filtered_df
+            .groupby(filtered_df["Time"].dt.date)["Energy delta[Wh]"]
+            .sum()
+            .reset_index()
+        )
+
+        # Format response
+        generation = [
+            {
+                "date": str(row["Time"]),
+                "energy_kwh": round(
+                    row["Energy delta[Wh]"] / 1000, 3
+                )
+            }
+            for _, row in daily_data.iterrows()
+        ]
+
+        return {
+            "period_days": days,
+            "start_date": str(start_date.date()),
+            "end_date": str(latest_date.date()),
+            "unit": "kWh",
+            "data_type": "historical",
+            "total_records": len(generation),
+            "generation": generation
+        }
+
+    except HTTPException:
+        raise
+
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=503, detail=str(error))
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Generation data fetch failed: {error}"
         )

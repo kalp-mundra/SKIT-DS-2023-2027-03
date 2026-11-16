@@ -22,17 +22,33 @@ import { alerts, panels } from "@/data/mockData";
 import { API_BASE_URL } from "@/config/app";
 import { PANEL_STATUS, SEVERITY } from "@/lib/status";
 
+import {
+  AreaChart,
+  Area,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+
 const formatTime = (date) =>
   date.toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
 
+
 export default function Dashboard() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lastUpdated, setLastUpdated] = useState("");
+
+  const [generation, setGeneration] = useState([]);
+  const [generationLoading, setGenerationLoading] = useState(true);
+  const [generationError, setGenerationError] = useState("");
+  const [selectedDays, setSelectedDays] = useState(30);
 
   const fetchSummary = useCallback(async () => {
     setLoading(true);
@@ -62,9 +78,42 @@ export default function Dashboard() {
     }
   }, []);
 
+  const fetchGeneration = useCallback(async () => {
+  setGenerationLoading(true);
+  setGenerationError("");
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/dashboard/generation?days=${selectedDays}`
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        typeof data.detail === "string"
+          ? data.detail
+          : "Unable to fetch generation data."
+      );
+    }
+
+    setGeneration(data.generation || []);
+  } catch (err) {
+    setGenerationError(
+      err.message || "Unable to load generation chart."
+    );
+  } finally {
+    setGenerationLoading(false);
+  }
+}, [selectedDays]);
+
   useEffect(() => {
     fetchSummary();
   }, [fetchSummary]);
+
+  useEffect(() => {
+  fetchGeneration();
+}, [fetchGeneration]);
 
   // These panel and alert values are still sample data.
   const activeAlerts = alerts.filter((alert) => !alert.resolved);
@@ -193,24 +242,82 @@ export default function Dashboard() {
       <section className="mt-6 grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader
-            title="Energy generation"
-            description="Historical dataset — chart integration pending"
-          />
+  title="Energy generation"
+  description="Daily historical energy generation"
+/>
 
-          <CardBody>
-            <div className="flex h-64 flex-col items-center justify-center rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 text-center">
-              <Activity
-                className="h-8 w-8 text-slate-300"
-                aria-hidden="true"
-              />
-              <p className="mt-2 text-sm font-medium text-slate-500">
-                Generation chart placeholder
-              </p>
-              <p className="text-xs text-slate-400">
-                Historical time-series visualisation will be added next.
-              </p>
-            </div>
-          </CardBody>
+<CardBody>
+  <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+    <p className="text-sm text-slate-500">
+      Daily energy generation (kWh)
+    </p>
+
+    <div className="flex gap-2">
+      {[7, 30, 90].map((days) => (
+        <button
+          key={days}
+          type="button"
+          onClick={() => setSelectedDays(days)}
+          className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+            selectedDays === days
+              ? "bg-brand-600 text-white"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+          }`}
+        >
+          {days}D
+        </button>
+      ))}
+    </div>
+  </div>
+
+  {generationLoading ? (
+    <div className="flex h-64 items-center justify-center">
+      Loading generation data...
+    </div>
+  ) : generationError ? (
+    <div className="flex h-64 items-center justify-center text-rose-600">
+      {generationError}
+    </div>
+  ) : generation.length === 0 ? (
+    <div className="flex h-64 items-center justify-center">
+      No generation data available.
+    </div>
+  ) : (
+    <ResponsiveContainer width="100%" height={280}>
+      <AreaChart data={generation}>
+        <defs>
+          <linearGradient id="energyGradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor="#0d9488" stopOpacity={0.3} />
+            <stop offset="95%" stopColor="#0d9488" stopOpacity={0} />
+          </linearGradient>
+        </defs>
+
+        <CartesianGrid strokeDasharray="3 3" vertical={false} />
+
+        <XAxis
+          dataKey="date"
+          tickFormatter={(value) => value.slice(5)}
+          tick={{ fontSize: 11 }}
+        />
+
+        <YAxis tick={{ fontSize: 11 }} width={55} />
+
+        <Tooltip
+          formatter={(value) => [`${value} kWh`, "Energy"]}
+          labelFormatter={(label) => `Date: ${label}`}
+        />
+
+        <Area
+          type="monotone"
+          dataKey="energy_kwh"
+          stroke="#0d9488"
+          strokeWidth={2}
+          fill="url(#energyGradient)"
+        />
+      </AreaChart>
+    </ResponsiveContainer>
+  )}
+</CardBody>
         </Card>
 
         <Card>
